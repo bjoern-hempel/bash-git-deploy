@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+
+# ------------
+# Friends of Ba$h. A collection of useful bash functions. Easy to include in your bash scripts.
+#
+# @author    Björn Hempel <bjoern@hempel.li>
+# @version   v0.0.0 (2018-03-24)
+#
+# @copyright MIT License
+# @copyright
+# @copyright Copyright (c) 2018 Björn Hempel
+# @copyright
+# @copyright Permission is hereby granted, free of charge, to any person obtaining a copy
+# @copyright of this software and associated documentation files (the "Software"), to deal
+# @copyright in the Software without restriction, including without limitation the rights
+# @copyright to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# @copyright copies of the Software, and to permit persons to whom the Software is
+# @copyright furnished to do so, subject to the following conditions:
+# @copyright
+# @copyright The above copyright notice and this permission notice shall be included in all
+# @copyright copies or substantial portions of the Software.
+# @copyright
+# @copyright THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# @copyright IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# @copyright FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# @copyright AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# @copyright LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# @copyright OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# @copyright SOFTWARE.
+# @copyright
+# @copyright Written by Björn Hempel <bjoern@hempel.li>.
+# ------------
+
+# ------------
+# Updates the git library from friends-of-bash library.
+#
+# @author  Björn Hempel <bjoern@hempel.li>
+# @version 1.0 (2018-03-24)
+# ------------
+updateLibrary()
+{
+    local pathRoot="$1"
+    local gitLibPath="$pathRoot/$2"
+    local libPath=$(dirname "$gitLibPath")
+    local friendsOfBashGitLibrary="$3"
+
+    while true; do
+        echo "This will download the current library \"$friendsOfBashGitLibrary\" to \"$gitLibPath\"."
+
+        read -n 1 -p "Do you want to continue? Type (y)es or (no): " yn
+        case $yn in
+            # yes
+            [Yy]*)
+                break
+                ;;
+            # no
+            [Nn]*)
+                echo                                                                                                                                                                                              
+                echo "The command was cancelled by user."
+                exit
+                ;;
+            # escape
+            $'\e')
+                echo
+                echo "The command was cancelled by user."
+                exit
+                ;;
+            # other character
+            *)
+                echo
+                ;;
+        esac
+    done
+
+    # create directory if it does not exist
+    mkdir -p "$libPath"
+
+    local wgetCheck="which wget >/dev/null"
+    local curlCheck="which curl >/dev/null"
+    local downloadWget="wget -q -O '$gitLibPath' $friendsOfBashGitLibrary"
+    local downloadCurl="curl $friendsOfBashGitLibrary > '$gitLibPath'"
+    local downloadError="echo 'neither application wget nor curl was found'"
+
+    echo
+    bash -c "($wgetCheck && $downloadWget) || ($curlCheck && $downloadCurl) || $downloadError"
+
+    if [ -f ]; then
+        echo "The library \"$gitLibPath\" was updated successfully."
+    else
+        echo "An error occurred while updating the library."
+    fi
+}
+
+# some configs and informations
+scriptname="$0"
+pathBin="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+pathRoot=$(dirname "$pathBin")
+friendsOfBashGitLibrary='https://raw.githubusercontent.com/bjoern-hempel/friends-of-bash/master/lib/git'
+gitLibPath='lib/git'
+
+# update the git library
+updateLibrary "$pathRoot" "$gitLibPath" "$friendsOfBashGitLibrary"
