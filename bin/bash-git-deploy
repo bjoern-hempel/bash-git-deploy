@@ -1,0 +1,211 @@
+#!/usr/bin/env bash
+
+# some configs
+numberOfLastTags=15
+currentName="current"
+
+# some configs and informations
+bashSource="${BASH_SOURCE[0]}"
+
+if [ -L "$bashSource" ]; then
+    bashSource=$(readlink "$bashSource")
+fi
+
+pathBin="$(cd "$(dirname "$bashSource")" && pwd)"
+pathRoot=$(dirname $pathBin)
+pathCurrent="$PWD"
+gitLibPath="$pathRoot/lib/git"
+
+# include some libraries
+source "$gitLibPath"
+
+# calculate some configs
+currentPath="$pathCurrent/$currentName"
+
+# ------------
+# Converts the given number to a letter.
+#
+# @author  Björn Hempel <bjoern@hempel.li>
+# @version 1.0 (2018-04-02)
+# ------------
+function chr
+{
+    printf \\$(printf '%03o' $1)
+}
+
+# ------------
+# Updates the tag list in given path.
+#
+# @author  Björn Hempel <bjoern@hempel.li>
+# @version 1.0 (2018-04-02)
+# ------------
+function fetchTags
+{
+    local gitDir="$1"
+
+    if [ "$gitDir" != "" ] && [ -d "$gitDir" ]; then
+        cd "$gitDir"
+    fi
+
+    git fetch --tags
+}
+
+# ------------
+# Checks out the given revision number.
+#
+# @author  Björn Hempel <bjoern@hempel.li>
+# @version 1.0 (2018-04-02)
+# ------------
+function checkoutRevision
+{
+    local revision="$1"
+    local gitDir="$2"
+
+    if [ "$gitDir" != "" ] && [ -d "$gitDir" ]; then
+        cd "$gitDir"
+    fi
+
+    local checkoutResult=$(git checkout $revision)
+
+    return 0
+}
+
+# ------------
+# Gets a list of last tags of given git repository.
+#
+# @author  Björn Hempel <bjoern@hempel.li>
+# @version 1.0 (2018-04-02)
+# ------------
+function getListOfLastTags
+{
+    local gitDir="$1"
+    local numberOfLastTags="$2"
+
+    if [ "$gitDir" != "" ] && [ -d "$gitDir" ]; then
+        cd "$gitDir"
+    fi
+
+    # update the tag list
+    fetchTags
+
+    git log --tags --simplify-by-decoration --pretty="format:%H  %d   %ai" | head -n $numberOfLastTags
+}
+
+# ------------
+# Clones the current release folder and relocate the current symlink to the new copy.
+#
+# @author  Björn Hempel <bjoern@hempel.li>
+# @version 1.0 (2018-04-02)
+# ------------
+function cloneReleaseFolderAndResymlink
+{
+    local $currentName="$1"
+
+    rsync --progress --stats -avz $(readlink "$currentName")"/" "releases/"$(date '+%Y%m%d%H%M%S')
+    rm "$currentName" && ln -s releases/$(ls -r releases/ | head -1) "$currentName"
+
+    return 0
+}
+
+# check bash version
+if [ "${BASH_VERSINFO}" -lt 4 ]; then
+    echo "This library needs a bash version at least 4 or higher. Your version number: $BASH_VERSION. Please update your bash version."
+    exit
+fi
+
+# show last n tags
+listOfLastTags=$(getListOfLastTags "$currentPath" $numberOfLastTags)
+currentRevision=$(getCurrentChangesetFromGivenPath "$currentPath")
+currentTag=$(getCurrentTagFromGivenPath "$currentPath")
+
+# print some infos
+echo "Current path:              $currentPath"
+echo "Current installed version: $currentRevision (tag: $currentTag)"
+echo 
+
+declare -A revisions
+counter=0
+
+# list the last tags
+while read -r line; do
+    [ "$counter" -lt 10 ] && versionNumber=$counter || versionNumber=$(chr $((87 + counter)))
+
+    revision=$(echo "$line" | awk '{print $1}')
+
+    revisions[$versionNumber]=$revision
+
+    [ "$revision" == "$currentRevision" ] && echo -n '→ ' || echo -n '  '
+    echo $versionNumber")  "$line
+
+    counter=$((counter+1))
+done <<< "$listOfLastTags"
+
+# select the wanted tag
+echo
+echo "Which new revision number you want to use?"
+echo
+
+while true; do
+    read -n 1 -p "Choose the number above: " choice
+
+    if [ "$choice" == $'\e' ]; then
+        echo "Switch process was canceled by user."
+        exit
+    elif [ -v ${revisions[$choice]} ]; then
+       echo && echo "The entered revision number $choice does not exist. Try another one."
+    else
+       break
+    fi
+done
+
+revision=${revisions[$choice]}
+
+echo && echo
+
+while true; do
+    echo -ne "I will checkout to revision number $revision. Continue? [yn]: "
+
+    read -n 1 answer && echo
+
+    # catch escape
+    if [ "$answer" == $'\e' ]; then
+        echo "Switch process was canceled by user."
+        exit
+    fi
+
+    [[ "$answer" =~ [yn] ]] && break
+done
+
+echo
+
+if [[ "$answer" =~ [n] ]]; then
+    echo "Switch process was canceled by user."
+    exit
+fi
+
+# make copy of current direcory and add relocate the symlink
+echo -n "Clone the current release folder.. "
+cloneResult=$(cloneReleaseFolderAndResymlink "$currentName")
+echo "Done." && echo
+
+# only a message
+echo -n "Relocate the symlink.. "
+echo "Done." && echo
+
+# checkout the wanted revision number into the new current folder
+echo -n "Try to checkout new revision $revision.. "
+checkoutResult=$(checkoutRevision "$revision" "$currentPath")
+echo "Done." && echo
+
+# check revision number
+echo "Check the revision number.. "
+currentRevision=$(getCurrentChangesetFromGivenPath "$currentPath")
+currentTag=$(getCurrentTagFromGivenPath "$currentPath")
+
+# success or error message
+if [ "$currentRevision" == "$revision" ]; then
+    echo "Revision $revision was successfully installed. Currently installed version: $currentRevision (tag: $currentTag)."
+else
+    echo "Revision $revision was not successfully installed. Currently installed version: $currentRevision (tag: $currentTag)."
+fi
+
