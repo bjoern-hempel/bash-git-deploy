@@ -332,9 +332,30 @@ if [[ "$answer" =~ [n] ]]; then
 fi
 
 # dump mysql db (db backup)
-if ! dumpMysqlBatch "$dbhost" "$dbname" "$dbuser" "$dbpass" "$currentDumpFile" "Dump current db into file \"%s\"" "Successfully finished." "Error occurred while dumping db. Abort."; then
-    echo "The db backup could not created successfully. Stop here. Didn't change the release."
-    exit
+if [ "$dbhost" != "" ] && [ "$dbname" != "" ] && [ "$dbuser" != "" ] && [ "$dbpass" != "" ] && [ "$currentDumpFile" != "" ]; then
+    if ! dumpMysqlBatch "$dbhost" "$dbname" "$dbuser" "$dbpass" "$currentDumpFile" "Dump current db into file \"%s\"" "Successfully finished." "Error occurred while dumping db. Abort."; then
+        echo "The db backup could not created successfully. Stop here. Didn't change the release."
+        exit
+    fi
+else
+    while true; do
+        echo -ne "The db config is not correct or was not found. I will skip the db backup. Continue? [yn]: "
+
+        read -n 1 answer && echo
+
+        # catch escape
+        if [ "$answer" == $'\e' ]; then
+            echo "The script was canceled by user."
+            exit
+        fi
+
+        if [[ "$answer" =~ [n] ]]; then
+            echo "The script was canceled by user."
+            exit
+        fi
+
+        [[ "$answer" =~ [y] ]] && break
+    done
 fi
 
 # make copy of current direcory and add relocate the symlink
