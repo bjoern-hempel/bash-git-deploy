@@ -34,6 +34,14 @@
 # some configs
 numberOfLastTags=15
 currentName="current"
+dumpsName="dumps"
+dumpTemplate='%s/dump-%s.sql'
+
+# db configs
+dbhost='127.0.0.1'
+dbname='test1sdkde_db'
+dbuser='test1sdkde_user'
+dbpass='srE6z!UkeV#Q+dne$6%V6&1V!='
 
 # some configs and informations
 bashSource="${BASH_SOURCE[0]}"
@@ -52,6 +60,7 @@ source "$gitLibPath"
 
 # calculate some configs
 currentPath="$pathCurrent/$currentName"
+dumpsPath="$pathCurrent/$dumpsName"
 
 # ------------
 # Converts the given number to a letter.
@@ -111,6 +120,7 @@ function getListOfLastTags
 {
     local gitDir="$1"
     local numberOfLastTags="$2"
+    local filterTag=false
 
     if [ "$gitDir" != "" ] && [ -d "$gitDir" ]; then
         cd "$gitDir"
@@ -119,7 +129,11 @@ function getListOfLastTags
     # update the tag list
     fetchTags
 
-    git log --tags --simplify-by-decoration --pretty="format:%H  %d   %ai" | head -n $numberOfLastTags
+    if $filterTag; then
+        git log --tags --simplify-by-decoration --pretty="format:%H  %d   %ai" | grep "(tag: " --color=never | head -n $numberOfLastTags
+    else
+        git log --simplify-by-decoration --pretty="format:%H  %d   %ai" | head -n $numberOfLastTags
+    fi
 }
 
 # ------------
@@ -138,6 +152,93 @@ function cloneReleaseFolderAndResymlink
     return 0
 }
 
+# ------------
+# Returns the absolute target from given symlink.
+#
+# @author  Björn Hempel <bjoern@hempel.li>
+# @version 1.0 (2018-04-04)
+# ------------
+function getAbsoluteTargetFromSymlink
+{
+    local symlink="$1"
+
+    local absolutePath=$(realpath "$symlink")
+
+    echo -n "$absolutePath"
+}
+
+# ------------
+# Dumps the current db, prints messages and manages the dump files.
+#
+# @author  Björn Hempel <bjoern@hempel.li>
+# @version 1.0 (2018-04-04)
+# ------------
+function dumpMysqlBatch
+{
+    local dbhost="$1"
+    local dbname="$2"
+    local dbuser="$3"
+    local dbpass="$4"
+
+    local dumpFile="$5"
+
+    local neutralMessage="$6"
+    local successMessage="$7"
+    local errorMessage="$8"
+
+    echo -n $(printf "$neutralMessage .." "$dumpFile")
+    echo -n " "
+
+    local dumpSuccessful=false
+
+    if dumpMysql "$dbhost" "$dbname" "$dbuser" "$dbpass" "$dumpFile"; then
+        dumpSuccessful=true
+    fi
+
+    # Delete dump file if an error occurred while dumping the db
+    if ! $dumpSuccessful && [ -f "$dumpFile" ]; then
+        rm "$dumpFile"
+    fi
+
+    # Prints out an error message.
+    if [ ! -f "$dumpFile" ]; then
+        echo $(printf "$errorMessage")
+        return 1
+    fi
+
+    # Prints out a success message.
+    echo $(printf "$successMessage")
+    return 0
+}
+
+# ------------
+# Dumps the current db.
+#
+# @author  Björn Hempel <bjoern@hempel.li>
+# @version 1.0 (2018-04-04)
+# ------------
+function dumpMysql
+{
+    local dbhost="$1"
+    local dbname="$2"
+    local dbuser="$3"
+    local dbpass="$4"
+
+    local dumpFile="$5"
+
+    local dumpStatus=0
+    local dumpResult=""
+
+    dumpResult=$(mysqldump -h$dbhost -u$dbuser -p$dbpass $dbname > $dumpFile 2>/dev/null)
+    dumpStatus=$?
+
+    if [ "$dumpStatus" -ne 0 ]; then
+        return 1
+    fi
+
+    return 0
+}
+
 # check bash version
 if [ "${BASH_VERSINFO}" -lt 4 ]; then
     echo "This library needs a bash version at least 4 or higher. Your version number: $BASH_VERSION. Please update your bash version."
@@ -148,12 +249,26 @@ fi
 listOfLastTags=$(getListOfLastTags "$currentPath" $numberOfLastTags)
 currentRevision=$(getCurrentChangesetFromGivenPath "$currentPath")
 currentTag=$(getCurrentTagFromGivenPath "$currentPath")
+currentReleasePath=$(getAbsoluteTargetFromSymlink "$currentPath")
+currentReleaseVersion=$(basename "$currentReleasePath")
+currentDumpPath="$dumpsPath/$currentReleaseVersion"
+currentDumpFile=$(printf "$dumpTemplate" "$currentDumpPath" $(date '+%Y%m%d%H%M%S'))
 
 # print some infos
 echo "Current path:              $currentPath"
+echo "Current release path:      $currentReleasePath"
 echo "Current installed version: $currentRevision (tag: $currentTag)"
-echo 
+echo "Current release version:   $currentReleaseVersion"
+echo "Current dump path:         $currentDumpPath"
+echo "Current dump file:         $currentDumpFile"
+echo
 
+# prepare some directories
+if [ ! -d "$currentDumpPath" ]; then
+    mkdir -p "$currentDumpPath"
+fi
+
+# declare some needed variables
 declare -A revisions
 counter=0
 
@@ -211,6 +326,12 @@ echo
 
 if [[ "$answer" =~ [n] ]]; then
     echo "Switch process was canceled by user."
+    exit
+fi
+
+# dump mysql db (db backup)
+if ! dumpMysqlBatch "$dbhost" "$dbname" "$dbuser" "$dbpass" "$currentDumpFile" "Dump current db into file \"%s\"" "Successfully finished." "Error occurred while dumping db. Abort."; then
+    echo "The db backup could not created successfully. Stop here. Didn't change the release."
     exit
 fi
 
