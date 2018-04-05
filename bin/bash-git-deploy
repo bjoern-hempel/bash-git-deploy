@@ -36,7 +36,8 @@ numberOfLastTags=15
 currentName="current"
 dumpsName="dumps"
 dumpTemplate='%s/dump-%s.sql'
-postExecuteTemplate='%s/.postExecute'
+configTemplate='%s/current/.deployConfig'
+postExecuteTemplate='%s/current/.deployPostExecute'
 
 # db configs
 dbhost=''
@@ -62,7 +63,13 @@ source "$gitLibPath"
 # calculate some configs
 currentPath="$pathCurrent/$currentName"
 dumpsPath="$pathCurrent/$dumpsName"
-postExecuteScript=$(printf "$postExecuteTemplate" "$pathCurrent")
+postExecuteScript=$(printf "$postExecuteTemplate" $(dirname "$pathRoot"))
+configFile=$(printf "$configTemplate" $(dirname "$pathRoot"))
+
+# load config
+if [ -f "$configFile" ]; then
+    source "$configFile"
+fi
 
 # ------------
 # Converts the given number to a letter.
@@ -385,7 +392,7 @@ else
 fi
 
 # execute post script
-echo "Search for post execute script.. "
+echo "Search for post execute script \"$postExecuteScript\".. "
 if [ -f "$postExecuteScript" ]; then
     echo "Found. Execute."
     source "$postExecuteScript"
