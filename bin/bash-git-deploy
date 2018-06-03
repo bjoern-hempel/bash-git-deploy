@@ -38,12 +38,20 @@ dumpsName="dumps"
 dumpTemplate='%s/dump-%s.sql'
 configTemplate='%s/current/.deployConfig'
 postExecuteTemplate='%s/current/.deployPostExecute'
+makeNewRelease=false
+makeDbDump=false
 
 # db configs
 dbhost=''
 dbname=''
 dbuser=''
 dbpass=''
+
+# some colors
+COLOR_NORM="\033[0m"
+COLOR_REDB="\033[0;41m"
+COLOR_GREENB="\033[0;42m"
+COLOR_YELLOWB="\033[0;43m"
 
 # some configs and informations
 bashSource="${BASH_SOURCE[0]}"
@@ -59,12 +67,16 @@ gitLibPath="$pathRoot/lib/git"
 
 # include some libraries
 source "$gitLibPath"
+source "$pathBin/parameter"
+source "$pathBin/colors"
 
 # calculate some configs
 currentPath="$pathCurrent/$currentName"
 dumpsPath="$pathCurrent/$dumpsName"
-postExecuteScript=$(printf "$postExecuteTemplate" $(dirname "$pathRoot"))
-configFile=$(printf "$configTemplate" $(dirname "$pathRoot"))
+#postExecuteScript=$(printf "$postExecuteTemplate" $(dirname "$pathRoot"))
+#configFile=$(printf "$configTemplate" $(dirname "$pathRoot"))
+postExecuteScript=$(printf "$postExecuteTemplate" $pathCurrent)
+configFile=$(printf "$configTemplate" $pathCurrent)
 
 # load config
 if [ -f "$configFile" ]; then
@@ -114,9 +126,41 @@ function checkoutRevision
         cd "$gitDir"
     fi
 
+    fetchTags "$gitDir"
+
     local checkoutResult=$(git checkout $revision)
 
     return 0
+}
+
+# ------------
+# Checks out the given version number.
+#
+# @author  Björn Hempel <bjoern@hempel.li>
+# @version 1.0 (2018-04-02)
+# ------------
+function checkoutVersion
+{
+    local version="$1"
+    local outputVariableName="$2"
+    local gitDir="$3"
+
+    if [ "$gitDir" != "" ] && [ -d "$gitDir" ]; then
+        cd "$gitDir"
+    fi
+
+    fetchTags "$gitDir"
+
+    local lastStatus
+    local output
+    output=$(git checkout $version 2>&1)
+    lastStatus=$?
+
+    read -r -d '' $outputVariableName << EOM
+$output
+EOM
+
+    return $lastStatus
 }
 
 # ------------
@@ -264,13 +308,23 @@ currentDumpPath="$dumpsPath/$currentReleaseVersion"
 currentDumpFile=$(printf "$dumpTemplate" "$currentDumpPath" $(date '+%Y%m%d%H%M%S'))
 
 # print some infos
-echo "Current path:              $currentPath"
-echo "Current release path:      $currentReleasePath"
-echo "Current installed version: $currentRevision (tag: $currentTag)"
-echo "Current release version:   $currentReleaseVersion"
-echo "Current dump path:         $currentDumpPath"
-echo "Current dump file:         $currentDumpFile"
+echo "Current path:                        $currentPath"
+echo "Current release path:                $currentReleasePath"
+echo "Currently installed version:         $currentTag"
+echo "Currently installed revision:        $currentRevision"
+echo "Currently installed release version: $currentReleaseVersion"
+
+if [ "$dbhost" != "" ] && [ "$dbname" != "" ] && [ "$dbuser" != "" ] && [ "$dbpass" != "" ] && [ "$currentDumpFile" != "" ]; then
+    echo "Current dump path:                   $currentDumpPath"
+    echo "Current dump file:                   $currentDumpFile"
+fi
+
 echo
+
+# stop here if the user only wants to see the info
+if $SHOW_INFO; then
+    exit
+fi
 
 # prepare some directories
 if [ ! -d "$currentDumpPath" ]; then
@@ -279,25 +333,47 @@ fi
 
 # declare some needed variables
 declare -A revisions
+declare -A tags
+declare -A commitTimes
 counter=0
 
 # list the last tags
 while read -r line; do
     [ "$counter" -lt 10 ] && versionNumber=$counter || versionNumber=$(chr $((87 + counter)))
 
+    # extract tag
+    if [[ "$line" =~ (\(|[[:space:]])tag:[[:space:]](v[^\),]+)(,|\)) ]]; then
+			tag="${BASH_REMATCH[2]}"
+    else
+      tag=""
+    fi
+
+    # extract commit time
+    if [[ "$line" =~ ([0-9]{4,4}-[0-9]{2,2}-[0-9]{2,2}[[:space:]][0-9]{2,2}:[0-9]{2,2}:[0-9]{2,2}) ]]; then
+      commitTime="${BASH_REMATCH[1]}"
+    else
+      commitTime=""
+    fi
+
+    # extract revision
     revision=$(echo "$line" | awk '{print $1}')
 
+    tags[$versionNumber]=$tag
+    commitTimes[$versionNumber]=$commitTime
     revisions[$versionNumber]=$revision
 
     [ "$revision" == "$currentRevision" ] && echo -n '→ ' || echo -n '  '
-    echo $versionNumber")  "$line
+    echo -n $versionNumber")  "
+    printf '%10s; ' "$tag"
+    echo -n $commitTime"; "$revision
+    echo
 
     counter=$((counter+1))
 done <<< "$listOfLastTags"
 
 # select the wanted tag
 echo
-echo "Which new revision number you want to use?"
+echo "Which new version number you want to checkout?"
 echo
 
 while true; do
@@ -306,19 +382,19 @@ while true; do
     if [ "$choice" == $'\e' ]; then
         echo "Switch process was canceled by user."
         exit
-    elif [ -v ${revisions[$choice]} ]; then
+    elif [ -v ${tags[$choice]} ]; then
        echo && echo "The entered revision number $choice does not exist. Try another one."
     else
        break
     fi
 done
 
-revision=${revisions[$choice]}
+tag=${tags[$choice]}
 
 echo && echo
 
 while true; do
-    echo -ne "I will checkout to revision number $revision. Continue? [yn]: "
+    echo -ne "I will checkout to version number ${GREEN}${BOLD}$tag${NORM}. Continue? [yn]: "
 
     read -n 1 answer && echo
 
@@ -339,63 +415,85 @@ if [[ "$answer" =~ [n] ]]; then
 fi
 
 # dump mysql db (db backup)
-if [ "$dbhost" != "" ] && [ "$dbname" != "" ] && [ "$dbuser" != "" ] && [ "$dbpass" != "" ] && [ "$currentDumpFile" != "" ]; then
-    if ! dumpMysqlBatch "$dbhost" "$dbname" "$dbuser" "$dbpass" "$currentDumpFile" "Dump current db into file \"%s\"" "Successfully finished." "Error occurred while dumping db. Abort."; then
-        echo "The db backup could not created successfully. Stop here. Didn't change the release."
-        exit
+if $makeDbDump; then
+    if [ "$dbhost" != "" ] && [ "$dbname" != "" ] && [ "$dbuser" != "" ] && [ "$dbpass" != "" ] && [ "$currentDumpFile" != "" ]; then
+        if ! dumpMysqlBatch "$dbhost" "$dbname" "$dbuser" "$dbpass" "$currentDumpFile" "Dump current db into file \"%s\"" "Successfully finished." "Error occurred while dumping db. Abort."; then
+            echo "The db backup could not created successfully. Stop here. Didn't change the release."
+            exit
+        fi
+    else
+        while true; do
+            echo -ne "The db config is not correct or was not found. I will skip the db backup. Continue? [yn]: "
+
+            read -n 1 answer && echo
+
+            # catch escape
+            if [ "$answer" == $'\e' ]; then
+                echo "The script was canceled by user."
+                exit
+            fi
+
+            if [[ "$answer" =~ [n] ]]; then
+                echo "The script was canceled by user."
+                exit
+            fi
+
+            [[ "$answer" =~ [y] ]] && break
+        done
     fi
-else
-    while true; do
-        echo -ne "The db config is not correct or was not found. I will skip the db backup. Continue? [yn]: "
-
-        read -n 1 answer && echo
-
-        # catch escape
-        if [ "$answer" == $'\e' ]; then
-            echo "The script was canceled by user."
-            exit
-        fi
-
-        if [[ "$answer" =~ [n] ]]; then
-            echo "The script was canceled by user."
-            exit
-        fi
-
-        [[ "$answer" =~ [y] ]] && break
-    done
 fi
 
 # make copy of current direcory and add relocate the symlink
-echo -n "Clone the current release folder.. "
-cloneResult=$(cloneReleaseFolderAndResymlink "$currentName")
-echo "Done." && echo
+if $makeNewRelease; then
+    echo -n "Clone the current release folder.. "
+    cloneResult=$(cloneReleaseFolderAndResymlink "$currentName")
+    echo "Done." && echo
+fi
 
 # only a message
-echo -n "Relocate the symlink.. "
-echo "Done." && echo
+if $makeNewRelease; then
+    echo -n "Relocate the symlink.. "
+    echo "Done." && echo
+fi
 
 # checkout the wanted revision number into the new current folder
-echo -n "Try to checkout new revision $revision.. "
-checkoutResult=$(checkoutRevision "$revision" "$currentPath")
-echo "Done." && echo
+echo -n "Try to checkout new version $tag.. "
+checkoutVersionOutput=""
+checkoutSuccessful=false
+if checkoutVersion "$tag" "checkoutVersionOutput" "$currentPath"; then
+    checkoutSuccessful=true
+    echo -e "${GREENB}success${NORM}"
+else
+    echo -e "${REDB}failed${NORM}"
+fi
+
+echo
+echo "__________"
+echo "$checkoutVersionOutput"
+echo "‾‾‾‾‾‾‾‾‾‾"
+echo "Done."
 
 # check revision number
-echo "Check the revision number.. "
+echo && echo -n "Check the tag version.. "
 currentRevision=$(getCurrentChangesetFromGivenPath "$currentPath")
 currentTag=$(getCurrentTagFromGivenPath "$currentPath")
 
 # success or error message
-if [ "$currentRevision" == "$revision" ]; then
-    echo "Revision $revision was successfully installed. Currently installed version: $currentRevision (tag: $currentTag)."
+if [ "$currentTag" == "$tag" ]; then
+    echo -e "Tag $tag was ${GREENB}successfully installed${NORM}.\nCurrently installed version: $currentTag ($currentRevision)."
 else
-    echo "Revision $revision was not successfully installed. Currently installed version: $currentRevision (tag: $currentTag)."
+    echo -e "Tag $tag was ${REDB}not successfully installed${NORM}.\nCurrently installed version: $currentTag ($currentRevision)."
 fi
 
+checkoutSuccessful=false
+
 # execute post script
-echo "Search for post execute script \"$postExecuteScript\".. "
+echo && echo -n "Search for post execute script \"$postExecuteScript\".. "
 if [ -f "$postExecuteScript" ]; then
     echo "Found. Execute."
+    echo "__________"
     source "$postExecuteScript"
+    echo "‾‾‾‾‾‾‾‾‾‾"
     echo "Done."
 else
     echo "Not found. Skip."

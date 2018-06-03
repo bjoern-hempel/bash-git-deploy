@@ -1,0 +1,37 @@
+# initial values
+SHOW_INFO=false
+
+# declare parameter list array
+PARAMETERS=()
+
+# read arguments
+# help:
+# help: Usage: %scriptname% [options...] {install|update|status}
+while [[ $# > 0 ]]; do
+    case "$1" in
+        # help:  -h,    --help                    Shows this help.
+        # help:
+        -h|--help)
+            cat "$BASH_SOURCE" | grep "# help:" | grep -v 'cat parameter' | sed 's/[ ]*# help:[ ]\?//g' | sed "s~%scriptname%~$scriptname~g"
+            exit 0
+            ;;
+
+        # help:  -v,    --version                 Shows the version number.
+        # help:
+        -v|--version)
+            [ "$(type -t showVersion)" == "function" ] && showVersion || echo "Create a showVersion function to show some text here."
+            exit 0
+            ;;
+
+        # help:  -i,    --info                    Shows project infos.
+        -i|--info)
+            SHOW_INFO=true
+            ;;
+
+        # collect all unknown parameters
+        *)
+            PARAMETERS+=("$1")
+            ;;
+    esac
+    shift
+done
