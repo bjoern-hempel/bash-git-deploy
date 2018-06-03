@@ -40,18 +40,14 @@ configTemplate='%s/current/.deployConfig'
 postExecuteTemplate='%s/current/.deployPostExecute'
 makeNewRelease=false
 makeDbDump=false
+writeRevision=''
+writeLog=''
 
 # db configs
 dbhost=''
 dbname=''
 dbuser=''
 dbpass=''
-
-# some colors
-COLOR_NORM="\033[0m"
-COLOR_REDB="\033[0;41m"
-COLOR_GREENB="\033[0;42m"
-COLOR_YELLOWB="\033[0;43m"
 
 # some configs and informations
 bashSource="${BASH_SOURCE[0]}"
@@ -81,6 +77,16 @@ configFile=$(printf "$configTemplate" $pathCurrent)
 # load config
 if [ -f "$configFile" ]; then
     source "$configFile"
+fi
+
+# make log path absolute
+if [ "$writeLog" != "" ]; then
+    writeLog="$currentPath/$writeLog"
+fi
+
+# make log path absolute
+if [ "$writeRevision" != "" ]; then
+    writeRevision="$currentPath/$writeRevision"
 fi
 
 # ------------
@@ -473,19 +479,38 @@ echo "$checkoutVersionOutput"
 echo "‾‾‾‾‾‾‾‾‾‾"
 echo "Done."
 
+# write log
+if [ "$writeLog" != "" ]; then
+    writeLogPath=$(dirname "$writeLog")
+    if [ -d "$writeLogPath" ] && [ -w "$writeLogPath" ]; then
+        echo "__________" >> $writeLog
+        echo $(date +"%Y-%d-%m %H:%M:%S") >> $writeLog
+        echo "‾‾‾‾‾‾‾‾‾‾" >> $writeLog
+        echo "$checkoutVersionOutput" >> $writeLog
+        echo >> $writeLog
+        echo >> $writeLog
+    fi
+fi
+
 # check revision number
 echo && echo -n "Check the tag version.. "
 currentRevision=$(getCurrentChangesetFromGivenPath "$currentPath")
 currentTag=$(getCurrentTagFromGivenPath "$currentPath")
 
 # success or error message
-if [ "$currentTag" == "$tag" ]; then
+if $checkoutSuccessful && [ "$currentTag" == "$tag" ]; then
     echo -e "Tag $tag was ${GREENB}successfully installed${NORM}.\nCurrently installed version: $currentTag ($currentRevision)."
 else
     echo -e "Tag $tag was ${REDB}not successfully installed${NORM}.\nCurrently installed version: $currentTag ($currentRevision)."
 fi
 
-checkoutSuccessful=false
+# write revision log
+if $checkoutSuccessful && [ "$writeRevision" != "" ]; then
+    writeRevisionPath=$(dirname "$writeRevision")
+    if [ -d "$writeRevisionPath" ] && [ -w "$writeRevisionPath" ]; then
+        echo $(date +"%Y-%d-%m %H:%M:%S")": $currentTag ($currentRevision)" > $writeRevision
+    fi
+fi
 
 # execute post script
 echo && echo -n "Search for post execute script \"$postExecuteScript\".. "
