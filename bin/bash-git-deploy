@@ -38,8 +38,8 @@ dumpsName="dumps"
 dumpTemplate='%s/dump-%s.sql'
 configTemplate='%s/current/.deployConfig'
 postExecuteTemplate='%s/current/.deployPostExecute'
-makeNewRelease=false
-makeDbDump=false
+makeNewRelease=true
+makeDbDump=true
 writeRevision=''
 writeLog=''
 
