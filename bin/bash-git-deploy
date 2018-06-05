@@ -56,6 +56,11 @@ if [ -L "$bashSource" ]; then
     bashSource=$(readlink "$bashSource")
 fi
 
+# check current the folder
+if [ ! -L "$currentName" ]; then
+    echo "No symlink with name $currentName found. Please create first or change directory." && exit
+fi
+
 pathBin="$(cd "$(dirname "$bashSource")" && pwd)"
 pathRoot=$(dirname $pathBin)
 pathCurrent="$PWD"
