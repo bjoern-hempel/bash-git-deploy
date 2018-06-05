@@ -61,11 +61,6 @@ pathRoot=$(dirname $pathBin)
 pathCurrent="$PWD"
 gitLibPath="$pathRoot/lib/git"
 
-# include some libraries
-source "$gitLibPath"
-source "$pathBin/parameter"
-source "$pathBin/colors"
-
 # calculate some configs
 currentPath="$pathCurrent/$currentName"
 dumpsPath="$pathCurrent/$dumpsName"
@@ -74,6 +69,23 @@ dumpsPath="$pathCurrent/$dumpsName"
 postExecuteScript=$(printf "$postExecuteTemplate" $pathCurrent)
 configFile=$(printf "$configTemplate" $pathCurrent)
 
+# include some core libraries
+source "$gitLibPath"
+
+# ------------
+# Shows the version number of this library.
+#
+# @author  Björn Hempel <bjoern@hempel.li>
+# @version 1.0 (2018-06-05)
+# ------------
+showVersion()
+{
+    getRepositoryVersion "$currentPath"
+}
+
+# include some local libraries
+source "$pathBin/parameter"
+source "$pathBin/colors"
 
 # ------------
 # Load the config file and do some calculations.
@@ -312,6 +324,7 @@ function dumpMysql
 
     return 0
 }
+
 
 # check bash version
 if [ "${BASH_VERSINFO}" -lt 4 ]; then
