@@ -401,7 +401,7 @@ echo "Which new version number you want to checkout?"
 echo
 
 while true; do
-    read -n 1 -p "Choose the number above: " choice
+    read -n 1 -p "Choose the number above (ESC to cancel): " choice
 
     if [ "$choice" == $'\e' ]; then
         echo "Switch process was canceled by user."
