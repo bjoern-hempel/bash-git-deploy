@@ -74,20 +74,35 @@ dumpsPath="$pathCurrent/$dumpsName"
 postExecuteScript=$(printf "$postExecuteTemplate" $pathCurrent)
 configFile=$(printf "$configTemplate" $pathCurrent)
 
-# load config
-if [ -f "$configFile" ]; then
+
+# ------------
+# Load the config file and do some calculations.
+#
+# @author  Björn Hempel <bjoern@hempel.li>
+# @version 1.0 (2018-06-05)
+# ------------
+function loadConfigFile
+{
+    local configFile="$1"
+
+    # no config file found
+    if [ ! -f "$configFile" ]; then
+        return 1
+    fi
+
+    # include config file
     source "$configFile"
-fi
 
-# make log path absolute
-if [ "$writeLog" != "" ]; then
-    writeLog="$currentPath/$writeLog"
-fi
+    # make log path absolute
+    if [ "$writeLog" != "" ]; then
+        writeLog="$currentPath/$writeLog"
+    fi
 
-# make log path absolute
-if [ "$writeRevision" != "" ]; then
-    writeRevision="$currentPath/$writeRevision"
-fi
+    # make log path absolute
+    if [ "$writeRevision" != "" ]; then
+        writeRevision="$currentPath/$writeRevision"
+    fi
+}
 
 # ------------
 # Converts the given number to a letter.
@@ -304,6 +319,9 @@ if [ "${BASH_VERSINFO}" -lt 4 ]; then
     exit
 fi
 
+# load config file
+loadConfigFile "$configFile"
+
 # show last n tags
 listOfLastTags=$(getListOfLastTags "$currentPath" $numberOfLastTags)
 currentRevision=$(getCurrentChangesetFromGivenPath "$currentPath")
@@ -478,6 +496,11 @@ echo "__________"
 echo "$checkoutVersionOutput"
 echo "‾‾‾‾‾‾‾‾‾‾"
 echo "Done."
+
+# load config file again
+if $checkoutSuccessful; then
+    loadConfigFile "$configFile"
+fi
 
 # write log
 if [ "$writeLog" != "" ]; then
