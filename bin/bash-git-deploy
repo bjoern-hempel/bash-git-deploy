@@ -80,7 +80,7 @@ source "$gitLibPath"
 # ------------
 showVersion()
 {
-    getRepositoryVersion "$currentPath"
+    getRepositoryVersion "$pathRoot"
 }
 
 # include some local libraries
